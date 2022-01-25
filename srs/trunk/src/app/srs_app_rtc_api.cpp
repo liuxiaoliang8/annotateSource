@@ -306,18 +306,19 @@ SrsGoApiRtcPublish::~SrsGoApiRtcPublish()
 // Response:
 //      {"sdp":"answer...", "sid":"..."}
 // @see https://github.com/rtcdn/rtcdn-draft
+// WEBRTC客户端通过推流API接口（/rtc/v1/publish/）向SRS服务器发送推流请求命令，此时，SRS通过如下的处理流程，最终创建一个推流端的接受对象SrsRtcPublishStream
 srs_error_t SrsGoApiRtcPublish::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
 {
     srs_error_t err = srs_success;
 
     SrsJsonObject* res = SrsJsonAny::object();
     SrsAutoFree(SrsJsonObject, res);
-
+    // 处理推流端请求（包含客户端SDP信息），并构造请求响应；
     if ((err = do_serve_http(w, r, res)) != srs_success) {
         srs_warn("RTC error %s", srs_error_desc(err).c_str()); srs_freep(err);
         return srs_api_response_code(w, r, SRS_CONSTS_HTTP_BadRequest);
     }
-
+    // 向客户端发送请求响应，包含本端的SDP信息；
     return srs_api_response(w, r, res->dumps());
 }
 
@@ -447,6 +448,7 @@ srs_error_t SrsGoApiRtcPublish::do_serve_http(ISrsHttpResponseWriter* w, ISrsHtt
 
     // TODO: FIXME: When server enabled, but vhost disabled, should report error.
     SrsRtcConnection* session = NULL;
+    // 创建会话对象和本端的SDP信息；
     if ((err = server_->create_session(&ruc, local_sdp, &session)) != srs_success) {
         return srs_error_wrap(err, "create session");
     }

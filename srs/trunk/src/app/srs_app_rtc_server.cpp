@@ -381,7 +381,13 @@ srs_error_t SrsRtcServer::listen_udp()
 
     return err;
 }
-
+/*
+ * webrtc客户端与服务端的连接建立过程大概涉及到四种主要的协议处理
+ *    客户端与服务端之间通过STUN协议和ICE机制建立连接
+ *    客户端与服务端之间通过DTLS协议报文完成安全认证并生成SRTP加密解密所需的密钥
+ *    客户端与服务端之间通过SRTP算法实现RTP报文的加解密
+ *    客户端与服务端之间通过RTCP报文完成音视频数据的Qos处理
+*/
 srs_error_t SrsRtcServer::on_udp_packet(SrsUdpMuxSocket* skt)
 {
     srs_error_t err = srs_success;
@@ -393,6 +399,7 @@ srs_error_t SrsRtcServer::on_udp_packet(SrsUdpMuxSocket* skt)
 
     uint64_t fast_id = skt->fast_id();
     // Try fast id first, if not found, search by long peer id.
+    // 查找udp客户端对应的SrsRtcConnection
     if (fast_id) {
         session = (SrsRtcConnection*)_srs_rtc_manager->find_by_fast_id(fast_id);
     }
@@ -483,14 +490,14 @@ srs_error_t SrsRtcServer::on_udp_packet(SrsUdpMuxSocket* skt)
 srs_error_t SrsRtcServer::listen_api()
 {
     srs_error_t err = srs_success;
-
+    // 获取全局API管理对象SrsHttpServerMux
     // TODO: FIXME: Fetch api from hybrid manager, not from SRS.
     SrsHttpServeMux* http_api_mux = _srs_hybrid->srs()->instance()->api_server();
-
+    // 注册RTC拉流API对应的处理对象SrsGoApiRtcPlay
     if ((err = http_api_mux->handle("/rtc/v1/play/", new SrsGoApiRtcPlay(this))) != srs_success) {
         return srs_error_wrap(err, "handle play");
     }
-
+    // 注册RTC推流API对应的处理对象SrsGoApiRtcPublish
     if ((err = http_api_mux->handle("/rtc/v1/publish/", new SrsGoApiRtcPublish(this))) != srs_success) {
         return srs_error_wrap(err, "handle publish");
     }
@@ -513,6 +520,7 @@ srs_error_t SrsRtcServer::create_session(SrsRtcUserConfig* ruc, SrsSdp& local_sd
     SrsRequest* req = ruc->req_;
 
     SrsRtcSource* source = NULL;
+    // 以 “/会议ID/推流客户端ID”字符串为key，为每一个推流端创建一个对应的SrsRtcSource对象；
     if ((err = _srs_rtc_sources->fetch_or_create(req, &source)) != srs_success) {
         return srs_error_wrap(err, "create source");
     }
@@ -520,7 +528,7 @@ srs_error_t SrsRtcServer::create_session(SrsRtcUserConfig* ruc, SrsSdp& local_sd
     if (ruc->publish_ && !source->can_publish()) {
         return srs_error_new(ERROR_RTC_SOURCE_BUSY, "stream %s busy", req->get_stream_url().c_str());
     }
-
+    // 为每一个推流端创建SrsRtcConnection类型的session对象
     // TODO: FIXME: add do_create_session to error process.
     SrsRtcConnection* session = new SrsRtcConnection(this, cid);
     if ((err = do_create_session(ruc, local_sdp, session)) != srs_success) {
@@ -541,6 +549,7 @@ srs_error_t SrsRtcServer::do_create_session(SrsRtcUserConfig* ruc, SrsSdp& local
 
     // first add publisher/player for negotiate sdp media info
     if (ruc->publish_) {
+        // 为session添加推流端处理对象
         if ((err = session->add_publisher(ruc, local_sdp)) != srs_success) {
             return srs_error_wrap(err, "add publisher");
         }
@@ -732,11 +741,11 @@ RtcServerAdapter::~RtcServerAdapter()
 srs_error_t RtcServerAdapter::initialize()
 {
     srs_error_t err = srs_success;
-
+    // 此函数内部调用openssl库，生成自签名证书，用于后续DTLS认证
     if ((err = _srs_rtc_dtls_certificate->initialize()) != srs_success) {
         return srs_error_wrap(err, "rtc dtls certificate initialize");
     }
-
+    // 此函数内部订阅5秒定时器超超时消息，通过此消息完成一些周期性工作；
     if ((err = rtc->initialize()) != srs_success) {
         return srs_error_wrap(err, "rtc server initialize");
     }
@@ -747,15 +756,15 @@ srs_error_t RtcServerAdapter::initialize()
 srs_error_t RtcServerAdapter::run(SrsWaitGroup* wg)
 {
     srs_error_t err = srs_success;
-
+    // 创建UDP端口监听对象SrsUdpMuxListener，默认监听8000端口
     if ((err = rtc->listen_udp()) != srs_success) {
         return srs_error_wrap(err, "listen udp");
     }
-
+    // 向全局SrsHttpServerMux对象注册RTC模块的推拉流API
     if ((err = rtc->listen_api()) != srs_success) {
         return srs_error_wrap(err, "listen api");
     }
-
+    // 启动_srs_rtc_manager内部协程，用于清理内部的僵尸链接，回收资源；
     if ((err = _srs_rtc_manager->start()) != srs_success) {
         return srs_error_wrap(err, "start manager");
     }

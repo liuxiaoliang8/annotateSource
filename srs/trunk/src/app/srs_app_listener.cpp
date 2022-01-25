@@ -570,7 +570,7 @@ void SrsUdpMuxListener::set_socket_buffer()
     srs_trace("UDP #%d LISTEN at %s:%d, SO_SNDBUF(default=%d, expect=%d, actual=%d, r0=%d), SO_RCVBUF(default=%d, expect=%d, actual=%d, r0=%d)",
         srs_netfd_fileno(lfd), ip.c_str(), port, default_sndbuf, expect_sndbuf, actual_sndbuf, r0_sndbuf, default_rcvbuf, expect_rcvbuf, actual_rcvbuf, r0_rcvbuf);
 }
-
+// 此协程序从监听端口读取数据
 srs_error_t SrsUdpMuxListener::cycle()
 {
     srs_error_t err = srs_success;
@@ -603,7 +603,9 @@ srs_error_t SrsUdpMuxListener::cycle()
         }
 
         nn_loop++;
-
+        // 以阻塞的方式从监听端口读取数据
+        // 在skt.recvfrom内部使用对端地址的port(16bits) + ipv4(32bits)构成一个fast_id_(64bits)
+        // 同理，使用对端地址的ipv4+port构成一个字符串类型的peer_id_
         int nread = skt.recvfrom(SRS_UTIME_NO_TIMEOUT);
         if (nread <= 0) {
             if (nread < 0) {
@@ -617,6 +619,7 @@ srs_error_t SrsUdpMuxListener::cycle()
         nn_msgs_stage++;
 
         // Handle the UDP packet.
+        // 这里实际调用SrsRtcServer::on_udp_packets()
         err = handler->on_udp_packet(&skt);
 
         // Use pithy print to show more smart information.

@@ -3572,7 +3572,9 @@ srs_error_t SrsRtcConnection::create_publisher(SrsRequest* req, SrsRtcSourceDesc
     if(publishers_.end() != publishers_.find(req->get_stream_url())) {
         return err;
     }
-
+    // 创建推流端的处理对象SrsRtcPublishStream，并启动内部的SrsRtcPLIWorker协程
+    // 到目前为止：
+    // SRS接收用户发送的推流API(/rtc/v1/publish)后，通过上面的函数调用栈，最中创建了SrsRtcConnection对象，SrsRtcPublishStream对象，SrsRtcSource对象
     SrsRtcPublishStream* publisher = new SrsRtcPublishStream(this, _srs_context->get_id());
     if ((err = publisher->initialize(req, stream_desc)) != srs_success) {
         srs_freep(publisher);
